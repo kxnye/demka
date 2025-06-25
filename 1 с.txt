@@ -1,0 +1,144 @@
+
+do sh ip int br 			# Посмотреть все интерфейсы
+do sh port br 				# Посмотреть все порты
+
+# HQ-RTR (172.16.40.0/28)
+	login: admin
+	password: admin
+	en 				# Включить EcoRouter
+	conf 				# Войти в конфигурацию EcoRouter
+	hostname hq-rtr 		# Задать имя хоста
+	ip domain-name au-team.irpo 	# Задать имя домена
+	
+	int global			# Интерфейс с интернетом
+	ip add 172.16.40.2/28		# Задать IP-адрес для интерфейса global
+	no shutdown			# Не выключать интерфейс
+	ip nat outside			# Трафик NAT идёт к ISP
+
+	int VLAN15			# Создать интерфейс с VLAN15
+	ip mtu 1500			# Максимальное количество байт в пакетах данных
+	ip add 10.10.10.1/27		# Задать IP-адрес для интерфейса VLAN15
+	ip nat inside			# Трафик от ISP идёт в NAT
+
+	int VLAN25			# Создать интерфейс с VLAN25
+	ip mtu 1500			# Максимальное количество байт в пакетах данных
+	ip add 10.10.10.33/28		# Задать IP-адрес для интерфейса VLAN25
+	ip nat inside			# Трафик от ISP идёт в NAT
+
+	port te0			# Войти в конфигурацию порта te0
+	service-instance te0/int1	# Весь приходящий на порт трафик проходит через сабинтерфейс global
+	encapsulation untagged		# Принимать любой приходящий нетегированный трафик
+	connect ip int global		# Связать порт с сабинтерфейсом global
+
+	port te1			# Войти в конфигурацию порта te1
+	service-instance te1/vlan15	# Весь приходящий на порт трафик проходит через сабинтерфейс vlan15
+	encapsulation dot1q 15		# 
+	rewrite pop 1			# 
+	connect ip int VLAN15 		# Связать порт с сабинтерфейсом VLAN15	
+	service-instance te1/vlan25	# Весь приходящий на порт трафик проходит через сабинтерфейс vlan25
+	encapsulation dot1q 25		# 
+	rewrite pop 1			# 
+	connect ip int VLAN25		# Связать порт с сабинтерфейсом VLAN25
+
+	ip route 0.0.0.0/0 172.16.40.1							# Перенаправлять весь исходящий трафик на ISP
+	ip nat pool NAT_POOL 10.10.10.1-10.10.10-254					# 
+	ip nat source dynamic inside-to-outside pool NAT_POOL overload int global	# 
+
+	ip pool DHCP_CLI
+	range 10.10.10.33-10.10.10.48
+	dhcp-server 1
+	lease 86400
+	mask 255.255.255.0
+	pool DHCP_CLI 1
+	dns 10.10.10.2
+	domain-name au-team.irpo
+	gateway 10.10.10.33
+	mask 255.255.255.240
+
+	exit				# Выйти из конфигурации
+
+	username net_admin		# Создать пользователя net_admin
+	password P@$$word		# Задать пароль для net_admin
+	role admin			# Установить максимальные привилегии
+
+	write				# Сохранить конфигурацию
+
+# BR-RTR (172.16.50.0/28)
+	login: admin
+	password: admin
+	en 				
+	conf 				
+	hostname br-rtr 		
+	ip domain-name au-team.irpo 		
+	
+	int global			
+	ip add 172.16.50.2/28	
+	ip nat outside	
+	
+	port te0
+	service-instance te0/int1
+	encapsulation untagged
+	connect ip int global
+
+	int BR_SRV
+	ip add 10.10.20.1/28
+	ip nat inside
+
+	port te0
+        service-instance te1/BR_SRV
+	encapsulation untagged
+	connect ip int BR_SRV
+	
+	exit
+
+        ip route 0.0.0.0/0 172.16.50.1
+	ip nat pool NAT_POOL 10.10.10.1-10.10.10-254					# 
+	ip nat source dynamic inside-to-outside pool NAT_POOL overload int global	# 
+
+	username net_admin		
+	password P@$$word		
+	role admin			
+
+	write				
+
+# HQ-SRV и BR-SRV
+	apt-get update && apt-get upgrade	# Обновить все системные пакеты
+	reboot					# Перезапустить систему
+
+	useradd -u 1010 -m sshuser		# Создать пользователя sshuser с идентификатором 1010
+	passwd sshuser				# Задать пароль для sshuser
+	visudo					# Редактировать /etc/sudoers в режиме проверки синтаксиса
+	  ┝ sshuser ALL=(root) NOPASSWD: ALL	# Выполнять любые команды без пароля sudo
+	  └ Ctrl + S, Ctrl + X 			# Сохранить и выйти из режима редактирования
+
+
+
+sudo samba-tool group add hq
+
+for i in {1..5}; do
+    sudo samba-tool user create user$i.hq P@ssw0rd$i
+    sudo samba-tool group addmembers hq user$i.hq
+done
+
+ap-get install nginx
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+> Настроить второй филиал BR аналогично
+> https://github.com/Barmenkov/HQ-RTR/tree/main
+> no int [название интерфейса] # Удалить интерфейс
+

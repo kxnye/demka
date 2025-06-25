@@ -1,0 +1,156 @@
+
+nano /etc/apt/sources.list.d/alt.list
+nano /etc/apt/sources.list.d/yandex.list
+https://github.com/Barmenkov/HQ-RTR/tree/main
+
+do sh ip int br 			# Посмотреть все интерфейсы
+do sh port br 				# Посмотреть все порты
+sh ip ospf neighbor 			# Показать соседей
+sh ip route 				# Показать перенаправление трафика
+no int [название интерфейса] 		# Удалить интерфейс
+
+# Proxmox
+	Перейти в /pve/network и в vmbr5 включить VLAN aware
+	Установить для HQ-SRV: vmbr5.tag = 15
+	Установить для HQ-CLI: vmbr5.tag = 25
+
+# ISP (172.16.0.1/24) 
+	login: root
+	password: toor
+
+	nano /etc/net/ifaces
+	  └ 1. Перейти в eth1
+	         ┝ 1. Перейти в ipv4address
+	         ┝ 2. Удалить с помощью Shift + D
+	         └ 3. Нажать Yes
+	    2. Перейти в eth2
+	         ┝ 1. Перейти в ipv4address 
+      	         ┝ 2. Удалить с помощью Shift + D
+	         └ 3. Нажать Yes
+	   3. Выйти с помощью Ctrl + Z
+	echo 172.16.40.1/28 > /etc/net/ifaces/eth1/ipv4address
+	echo 172.16.50.1/28 > /etc/net/ifaces/eth2/ipv4address
+	timedatectl set-timezone Asia/Kamchatka
+
+# HQ-RTR (172.16.40.0/28)
+	login: admin
+	password: admin
+	en 				# Включить EcoRouter
+	conf 				# Войти в конфигурацию EcoRouter
+	hostname hq-rtr 		# Задать имя хоста
+	ip domain-name au-team.irpo 	# Задать имя домена	
+
+	username net_admin		# Создать пользователя net_admin
+	password P@$$word		# Задать пароль для net_admin
+	role admin			# Установить максимальные привилегии
+	ex
+
+	int global			# Интерфейс с интернетом
+	ip add 172.16.40.2/28		# Задать IP-адрес для интерфейса global
+	no shutdown			# Не выключать интерфейс
+	ip nat outside			# Трафик NAT идёт к ISP
+
+	int VLAN15			# Создать интерфейс с VLAN15
+	ip mtu 1500			# Максимальное количество байт в пакетах данных
+	ip add 10.10.10.1/27		# Задать IP-адрес для интерфейса VLAN15
+	ip nat inside			# Трафик от ISP идёт в NAT
+
+	int VLAN25			# Создать интерфейс с VLAN25
+	dhcp-server 1
+	ip mtu 1500			# Максимальное количество байт в пакетах данных
+	ip add 10.10.10.33/28		# Задать IP-адрес для интерфейса VLAN25
+	ip nat inside			# Трафик от ISP идёт в NAT
+
+	port te0			# Войти в конфигурацию порта te0
+	service-instance te0/global	# Весь приходящий на порт трафик проходит через сабинтерфейс global
+	encapsulation untagged		# Принимать любой приходящий нетегированный трафик
+	connect ip int global		# Связать порт с сабинтерфейсом global
+
+	port te1			# Войти в конфигурацию порта te1
+	service-instance te1/vlan15	# Весь приходящий на порт трафик проходит через сабинтерфейс vlan15
+	encapsulation dot1q 15		# 
+	rewrite pop 1			# 
+	connect ip int VLAN15 		# Связать порт с сабинтерфейсом VLAN15	
+	ex	
+	service-instance te1/vlan25	# Весь приходящий на порт трафик проходит через сабинтерфейс vlan25
+	encapsulation dot1q 25		# 
+	rewrite pop 1			# 
+	connect ip int VLAN25		# Связать порт с сабинтерфейсом VLAN25
+	ex
+	ex
+
+	ip route 0.0.0.0/0 172.16.40.1							# Перенаправлять весь исходящий трафик на ISP
+	ip nat pool NAT_POOL 10.10.10.1-10.10.10.254					# Создать пул NAT адресов
+	ip nat source dynamic inside-to-outside pool NAT_POOL overload int global	# Транслировать весь NAT трафик наружу
+
+	# DHCP для HQ-CLI
+	ip pool HQ-NET25		# Создать пул адресов
+	range 10.10.10.33-10.10.10.48	# Задать диапазон IP-адресов
+	dhcp-server 1			# Использовать DHCP-сервер с ID 1
+	lease 86400			# Максимальное время использования выданного IP-адреса в секундах
+	mask 255.255.255.0		# Маска подсети
+	pool HQ-NET25 1			# 
+	dns 10.10.10.2			# Указать доменные сервера
+	domain-name au-team.irpo	# Доменное имя для всех выданных адресов
+	gateway 10.10.10.33		# Шлюз
+	mask 255.255.255.240		# Маска подсети
+
+	exit				# Выйти из конфигурации
+	ntp timezone utc+12useradd		# Задать часовой пояс
+	show ntp timezone		# Посмотреть часовой пояс
+	write				# Сохранить конфигурацию
+
+# BR-RTR (172.16.50.0/28)
+	login: admin
+	password: admin
+	en 				
+	conf 				
+	hostname br-rtr 		
+	ip domain-name au-team.irpo 		
+	
+	username net_admin		
+	password P@$$word		
+	role admin
+
+	int global			
+	ip add 172.16.50.2/28			
+	no shutdown
+	ip nat outside	
+
+	int BR_SRV
+	ip mtu 1500
+	ip add 10.10.20.1/28	
+	ip nat inside
+
+	port te0
+	service-instance te0/global
+	encapsulation untagged
+	connect ip int global
+
+	ip route 0.0.0.0/0 172.16.50.1
+	
+	exit
+	ntp timezone utc+12
+	show ntp timezone
+	write				
+
+# HQ-SRV и BR-SRV
+	Указать статический IPv4-адрес 
+	apt-get update && apt-get upgrade	# Обновить все системные пакеты
+	reboot					# Перезапустить систему
+
+	useradd -u 1010 -m sshuser		# Создать пользователя sshuser с идентификатором 1010
+	passwd sshuser				# Задать пароль для sshuser: P@ssw0rd
+	nano /etc/sudoers			# Редактировать в режиме проверки синтаксиса
+	  ┝ sshuser ALL=(root) NOPASSWD: ALL	# Выполнять любые команды без пароля sudo (если не работает, то root поменять на ALL)
+	  └ Ctrl + S, Ctrl + X 			# Сохранить и выйти из режима редактирования
+
+	apt-get install openssh-server
+	systemctl enable sshd
+	nano /etc/openssh/sshd_config
+	  ┝ Port 3010
+	  ┝ MaxAuthTries 2 	
+	  ┝ Banner /etc/ssh/banner.net		# Написать в banner.net: Authorized access only
+	  └ Добавить в конце: AllowUsers sshuser
+/etcvi
+	timedatectl set-timezone Asia/Kamchatka
