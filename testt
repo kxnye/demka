@@ -1,0 +1,42 @@
+# 1) Войти в режим конфигурации
+ecorouter> enable
+ecorouter# configure terminal
+
+# 2) Привязать физ. порты к сервисным интерфейсам
+ecorouter(config)# port ge0
+ecorouter(config-port)# service-instance global
+ecorouter(config-service-instance)# encapsulation untagged
+ecorouter(config-service-instance)# connect ip interface global
+
+ecorouter(config)# port ge1
+ecorouter(config-port)# service-instance local
+ecorouter(config-service-instance)# encapsulation untagged
+ecorouter(config-service-instance)# connect ip interface local
+
+# 3) Настроить интерфейсы и пометить их для NAT
+ecorouter(config)# interface global
+ecorouter(config-if)# ip address 172.16.4.2/24
+ecorouter(config-if)# ip nat outside
+
+ecorouter(config)# interface local
+ecorouter(config-if)# ip address 10.10.10.1/24
+ecorouter(config-if)# ip nat inside 
+
+# 4) Создать пул внутренних адресов для динамического PAT
+ecorouter(config)# ip nat pool NAT_POOL 10.10.10.1-10.10.10.254 
+
+# 5) Включить overload на WAN-интерфейсе
+ecorouter(config)# ip nat source dynamic inside pool NAT_POOL overload interface global 
+
+# 6) Настроить маршрут по умолчанию к ISP
+ecorouter(config)# ip route 0.0.0.0/0 172.16.4.1
+
+# 7) Сохранить конфигурацию (опционально)
+ecorouter(config)# end
+ecorouter# write
+
+---
+# Маршруты на HQ-RTR
+На вашем HQ-RTR (внутри сети 10.10.10.0/24) нужно прописать:
+```shell
+ip route 0.0.0.0/0 10.10.10.1
